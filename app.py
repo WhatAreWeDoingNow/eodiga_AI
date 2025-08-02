@@ -1,19 +1,22 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from groq import Groq
 from PIL import Image, ImageDraw, ImageFont
-from fastapi.responses import StreamingResponse
-import io, os
+from datetime import datetime
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI()
 
-from dotenv import load_dotenv
-load_dotenv()
+app.mount("/images", StaticFiles(directory="generated_images"), name="images")
 
 api_key = os.environ['API_KEY']
 
 @app.post("/api/v1/generate")
-def text_generate(StoreName: str, StoreIntroduce: str):
-    # 1. 텍스트 생성
+def text_generate(StoreName: str, StoreIntroduce: str, request: Request):
     client = Groq(api_key=api_key)
     chat_completion = client.chat.completions.create(
         messages=[
@@ -26,11 +29,9 @@ def text_generate(StoreName: str, StoreIntroduce: str):
     )
     result_text = chat_completion.choices[0].message.content.strip()
 
-    # 2. 이미지 생성
     img = Image.new("RGB", (500, 500), color=(255, 255, 255))
     draw = ImageDraw.Draw(img)
 
-    # 한글 폰트가 필요하면 폰트 경로 변경 (예: 나눔고딕)
     try:
         font = ImageFont.truetype("/System/Library/Fonts/Supplemental/AppleGothic.ttf", 20)
     except:
@@ -43,10 +44,11 @@ def text_generate(StoreName: str, StoreIntroduce: str):
     y = 500 - text_height - 10
     draw.text((x, y), result_text, font=font, fill=(0, 0, 0))
 
-    # 3. 이미지 응답
-    img_bytes = io.BytesIO()
-    img.save(img_bytes, format="PNG")
-    img_bytes.seek(0)
+    filename = f"{datetime.now().strftime('%Y%m%d%H%M%S%f')}.png"
+    file_path = f"generated_images/{filename}"
+    img.save(file_path)
 
-    return StreamingResponse(img_bytes, media_type="image/png")
-    #return {"RESULT" : result_text}
+    # 정적 파일 경로 반환
+    image_url = f"{request.base_url}images/{filename}"
+
+    return JSONResponse(content={"result": result_text, "image_url": image_url})
